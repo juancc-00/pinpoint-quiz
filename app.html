@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GeoHistory Trivia - Silent Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 0; display: flex; flex-direction: column; height: 100vh; background: #e0e0e0; }
+        #header { background: #1a1a1a; color: white; padding: 15px; text-align: center; z-index: 1000; border-bottom: 3px solid #f1c40f; }
+        #map { flex-grow: 1; cursor: crosshair; background: #aad3df; }
+        
+        #ui-panel { 
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); 
+            z-index: 1000; background: white; padding: 20px; 
+            border-radius: 12px; box-shadow: 0 8px 25px rgba(0,0,0,0.4); 
+            text-align: center; width: 350px;
+        }
+
+        .btn { 
+            padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; 
+            font-size: 14px; margin: 5px; border: none; transition: 0.2s;
+        }
+        #confirm-btn { background: #2980b9; color: white; width: 100%; }
+        #confirm-btn:disabled { background: #bdc3c7; cursor: not-allowed; }
+        #next-btn { background: #27ae60; color: white; width: 100%; }
+        
+        .result-text { font-size: 1.1em; margin-bottom: 15px; color: #333; min-height: 40px; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div id="header">
+    <div id="question-title" style="font-size: 1.5em; font-weight: bold; color: #f1c40f;">Cargando...</div>
+    <div id="question-desc" style="margin-top: 5px; color: #bdc3c7; font-style: italic;">...</div>
+</div>
+
+<div id="map"></div>
+
+<div id="ui-panel">
+    <div id="result-message" class="result-text">Haz clic en el mapa para marcar tu respuesta</div>
+    <button id="confirm-btn" class="btn" onclick="confirmAnswer()" disabled>Confirmar Selección</button>
+    <button id="next-btn" class="btn hidden" onclick="nextQuestion()">Siguiente Pregunta</button>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script>
+    const questions = [
+        { title: "Batalla de Waterloo", desc: "1815: La caída definitiva de Napoleón.", coords: [50.6806, 4.4122] },
+        { title: "Machu Picchu", desc: "La majestuosa ciudadela Inca en los Andes.", coords: [-13.1631, -72.5450] },
+        { title: "Línea Maginot", desc: "Defensa francesa construida tras la I Guerra Mundial.", coords: [49.2140, 6.1300] },
+        { title: "Pearl Harbor", desc: "Base naval atacada en diciembre de 1941.", coords: [21.3650, -157.9390] },
+        { title: "Desembarco de Normandía", desc: "Playa de Omaha, 6 de junio de 1944.", coords: [49.3697, -0.8711] },
+        { title: "Termópilas", desc: "El paso donde Leonidas enfrentó a Jerjes.", coords: [38.7966, 22.5367] },
+        { title: "Chichén Itzá", desc: "La pirámide de Kukulcán en la península de Yucatán.", coords: [20.6843, -88.5678] },
+        { title: "Petra", desc: "La ciudad de los Nabateos tallada en el desierto.", coords: [30.3285, 35.4444] },
+        { title: "Batalla de Stalingrado", desc: "El punto de inflexión en el frente ruso.", coords: [48.7080, 44.5133] },
+        { title: "Rapa Nui", desc: "Isla de Pascua y sus gigantescos Moáis.", coords: [-27.1127, -109.3497] },
+        { title: "Angkor Wat", desc: "Capital del antiguo Imperio Jemer.", coords: [13.4125, 103.8670] },
+        { title: "Muro de Berlín", desc: "El símbolo de la Guerra Fría en Europa.", coords: [52.5163, 13.3777] },
+        { title: "La Alhambra", desc: "La joya del Reino de Granada.", coords: [37.1773, -3.5897] }
+    ];
+
+    let currentIdx = 0;
+    let map, userMarker, correctMarker, polyline;
+    let selectedCoords = null;
+
+    function initMap() {
+        // Estilo sin nombres: 'light_nolabels'
+        map = L.map('map', {
+            minZoom: 2,
+            maxBounds: [[-90, -180], [90, 180]]
+        }).setView([20, 0], 2);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_nolabels/{z}/{x}/{y}{r}.png', {
+            attribution: '© CartoDB'
+        }).addTo(map);
+
+        map.on('click', onMapClick);
+        loadQuestion();
+    }
+
+    function loadQuestion() {
+        // Limpiar elementos de la ronda anterior
+        if (userMarker) map.removeLayer(userMarker);
+        if (correctMarker) map.removeLayer(correctMarker);
+        if (polyline) map.removeLayer(polyline);
+        
+        userMarker = null;
+        selectedCoords = null;
+
+        const q = questions[currentIdx];
+        document.getElementById('question-title').innerText = q.title;
+        document.getElementById('question-desc').innerText = q.desc;
+        document.getElementById('result-message').innerText = "Haz clic en el mapa para marcar tu respuesta";
+        
+        document.getElementById('confirm-btn').classList.remove('hidden');
+        document.getElementById('confirm-btn').disabled = true;
+        document.getElementById('next-btn').classList.add('hidden');
+    }
+
+    function onMapClick(e) {
+        // Si ya hemos confirmado, no permitir mover el marcador
+        if (!document.getElementById('next-btn').classList.contains('hidden')) return;
+
+        selectedCoords = [e.latlng.lat, e.latlng.lng];
+        
+        // Si no existe el marcador, lo creamos. Si existe, lo movemos.
+        if (!userMarker) {
+            userMarker = L.marker(selectedCoords).addTo(map);
+        } else {
+            userMarker.setLatLng(selectedCoords);
+        }
+        
+        document.getElementById('confirm-btn').disabled = false;
+        document.getElementById('result-message').innerText = "Marcador colocado. ¿Es tu respuesta final?";
+    }
+
+    function confirmAnswer() {
+        const q = questions[currentIdx];
+        const distance = calculateDistance(selectedCoords, q.coords);
+
+        // Marcador de la respuesta correcta (Verde)
+        correctMarker = L.circleMarker(q.coords, {
+            color: '#27ae60', 
+            radius: 10, 
+            fillOpacity: 0.9 
+        }).addTo(map).bindPopup("Ubicación Real").openPopup();
+
+        // Línea de unión (Roja)
+        polyline = L.polyline([selectedCoords, q.coords], {
+            color: '#e74c3c', 
+            weight: 3, 
+            dashArray: '10, 10'
+        }).addTo(map);
+
+        // Feedback
+        document.getElementById('result-message').innerHTML = `Error de distancia: <strong>${Math.round(distance)} km</strong>`;
+        document.getElementById('confirm-btn').classList.add('hidden');
+        document.getElementById('next-btn').classList.remove('hidden');
+        
+        // Encuadrar la cámara para mostrar ambos puntos
+        const group = new L.featureGroup([userMarker, correctMarker]);
+        map.fitBounds(group.getBounds(), { padding: [70, 70] });
+    }
+
+    function calculateDistance(c1, c2) {
+        const R = 6371;
+        const dLat = (c2[0] - c1[0]) * Math.PI / 180;
+        const dLon = (c2[1] - c1[1]) * Math.PI / 180;
+        const a = Math.sin(dLat/2)**2 + Math.cos(c1[0]*Math.PI/180) * Math.cos(c2[0]*Math.PI/180) * Math.sin(dLon/2)**2;
+        return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    }
+
+    function nextQuestion() {
+        currentIdx++;
+        if (currentIdx >= questions.length) {
+            alert("Has completado el recorrido histórico.");
+            currentIdx = 0;
+        }
+        map.flyTo([20, 0], 2); // Efecto de vuelo al reiniciar
+        loadQuestion();
+    }
+
+    window.onload = initMap;
+</script>
+</body>
+</html>
