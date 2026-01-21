@@ -160,11 +160,12 @@
             alert("Has completado el recorrido histórico.");
             currentIdx = 0;
         }
-        map.flyTo([20, 0], 2); // Efecto de vuelo al reiniciar
+        map.setView([20, 0], 2);
         loadQuestion();
     }
 
     window.onload = initMap;
 </script>
 </body>
+
 </html>
